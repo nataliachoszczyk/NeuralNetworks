@@ -23,3 +23,6 @@ def relu(z):
 
 def relu_derivative(z):
     return np.where(z > 0, 1, 0)
+
+def softmax(z):
+    return np.exp(z) / np.sum(np.exp(z), axis=1, keepdims=True)

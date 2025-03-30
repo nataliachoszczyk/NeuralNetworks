@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class MLP:
-    def __init__(self, layers, weight_init = 'uniform'):
+    def __init__(self, layers, weight_init = 'uniform', task = 'regression'):
+        self.task = task # 'regression' or 'classification'
         self.layers = []
         for layer in layers:
             self.layers.append(Layer(layer['input_size'], layer['output_size'], layer['activation'], weight_init))
@@ -16,12 +17,20 @@ class MLP:
             activations.append(a)
         return activations
     
-    def backpropagate(self, X, y):
-        activations = self.feedforward(X)
+    def backpropagate(self, X, y, activations):
         y_pred = activations[-1]
+        if self.task == 'classification':
+            y_pred = np.argmax(y_pred, axis=1).flatten()
+            y_pred = self.one_hot_encode(y_pred, n=y.shape[1])
+
         errors = [y_pred - y]
         
-        for i in range(len(self.layers) - 1, 0, -1):
+        if self.task == 'classification':
+            errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T))
+        else:
+            errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T) * self.layers[len(self.layers) - 2].activation_derivative(activations[len(self.layers) - 1]))
+
+        for i in range(len(self.layers) - 2, 0, -1):
             errors.append(errors[-1].dot(self.layers[i].weights.T) * self.layers[i-1].activation_derivative(activations[i]))
         errors.reverse()
         
@@ -43,25 +52,30 @@ class MLP:
 
         if batch_size is None:
             batch_size = len(X)
-        
-        if normalize:
-        # normalizacja danych
+
+        if self.task == 'classification':
+            y_oh = self.one_hot_encode(y)
+
+        if normalize and self.task == 'regression':
             X_norm = (X - X.mean(axis=0)) / X.std(axis=0)
             y_norm = (y - y.mean(axis=0)) / y.std(axis=0)
         else:
             X_norm = X
-            y_norm = y
+            y_norm = y_oh if self.task == 'classification' else y
         
         loss_history = []
         weight_history = []
 
         for epoch in range(epochs):
             
+            epoch_predictions = []
             for batch_start in range(0, len(X), batch_size):
                 batch_X = X_norm[batch_start:batch_start + batch_size]
                 batch_y = y_norm[batch_start:batch_start + batch_size]
 
-                weight_gradients, bias_gradients = self.backpropagate(batch_X, batch_y)                
+                activations = self.feedforward(batch_X)
+                epoch_predictions.append(activations[-1])
+                weight_gradients, bias_gradients = self.backpropagate(batch_X, batch_y, activations)                
 
                 for j in range(len(self.layers)):
                     gradient_max = 1
@@ -80,32 +94,85 @@ class MLP:
                         self.layers[j].biases -= learning_rate * np.clip(bias_gradients[j], -gradient_max, gradient_max)
 
             y_pred = self.predict(X_norm)
-            if normalize:
+            if normalize and self.task == 'regression':
                 y_pred = y_pred * y.std(axis=0) + y.mean(axis=0)
-            loss = self.mse(y, y_pred)
+            y_pred_epoch = np.vstack(epoch_predictions)
+            loss = self.mse(y, y_pred) if self.task == 'regression' else self.cross_entropy(y_norm, y_pred_epoch)
             loss_history.append(loss)
             weight_history.append([layer.weights.copy() for layer in self.layers])
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}")
+            if self.task == 'classification':
+                f1 = self.f1_score(y, y_pred)
+                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}, F1 Score: {f1}")
+            else:  
+                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}")
             
-        self.plot_loss(loss_history)
-        self.plot_partial_loss(loss_history, ((1 * epochs) // 2), epochs)
-        #self.plot_weights(weight_history)
+        self.plot_loss(loss_history, ((1 * epochs) // 2), epochs)
     
     def predict(self, X):
-        return self.feedforward(X)[-1]
+        if self.task == 'classification':
+            return np.argmax(self.feedforward(X)[-1], axis=1).flatten()
+        else:
+            return self.feedforward(X)[-1]
     
     def set_weights_and_biases(self, layer_idx, weights, biases):
         self.layers[layer_idx].weights = weights
         self.layers[layer_idx].biases = biases
+
+    def one_hot_encode(self, y, n=None):
+        n = len(np.unique(y)) if n is None else n
+        y = y.astype(int)
+        y_one_hot = np.zeros((len(y), n))
+        y_one_hot[np.arange(len(y)), y] = 1
+
+        return y_one_hot
     
+
+    ##### METRICS #####
     def mse(self, y_true, y_pred):
         return np.mean((y_true - y_pred) ** 2)
     
-    def plot_loss(self, loss_history):
+    def f1_score(self, y_true, y_pred):
+        classes = set(y_true) | set(y_pred)
+        f1_all = 0
+
+        for cls in classes:
+            tp = sum((yt == cls and yp == cls) for yt, yp in zip(y_true, y_pred))
+            fp = sum((yt != cls and yp == cls) for yt, yp in zip(y_true, y_pred))
+            fn = sum((yt == cls and yp != cls) for yt, yp in zip(y_true, y_pred))
+
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            
+            f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+            f1_all += f1
+        
+        return f1_all / len(classes) if classes else 0
+    
+    def cross_entropy(self, y_true, y_pred):
+        epsilon = 1e-12
+        y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
+        loss = -np.sum(y_true * np.log(y_pred)) / y_true.shape[0]
+        
+        return loss
+
+
+
+    ##### PLOTTING FUNCTIONS #####
+    def plot_loss(self, loss_history, start_epoch, end_epoch):
+        plt.figure(figsize=(8, 3))
+
+        plt.subplot(1, 2, 1)
         plt.scatter(range(len(loss_history)), loss_history)
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.title('Loss vs Epochs')
+        plt.grid(True)
+
+        plt.subplot(1, 2, 2)
+        plt.scatter(range(start_epoch, end_epoch), loss_history[start_epoch:end_epoch])
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.title('Loss vs Epochs for second half of epochs')
         plt.grid(True)
         plt.show()
 
@@ -132,43 +199,65 @@ class MLP:
             plt.show()
         
     def plot_predictions(self, X_train, y_train, X_test, y_test, normalize=True):
-        plt.figure(figsize=(12, 5))
+        plt.figure(figsize=(8, 3))
 
-        # Wykres dla zbioru treningowego
-        plt.subplot(1, 2, 1)
-        if normalize:
-            X_train_norm = (X_train - X_train.mean(axis=0)) / X_train.std(axis=0)
-        else:
-            X_train_norm = X_train
-        y_pred_train_norm = self.predict(X_train_norm)
-        if normalize:
-            y_pred_train = y_pred_train_norm * y_train.std() + y_train.mean()
-        else:
-            y_pred_train = y_pred_train_norm
-        train_mse = self.mse(y_train, y_pred_train)
-        plt.scatter(X_train, y_train, label="Train Data")
-        plt.scatter(X_train, y_pred_train, label="Predicted")
-        plt.title(f'Training Data vs Predictions (MSE: {train_mse:.4f})')
-        plt.legend()
-        plt.grid(True)
+        if self.task == 'regression':
+            # Wykres dla zbioru treningowego
+            plt.subplot(1, 2, 1)
+            if normalize:
+                X_train_norm = (X_train - X_train.mean(axis=0)) / X_train.std(axis=0)
+            else:
+                X_train_norm = X_train
+            y_pred_train_norm = self.predict(X_train_norm)
+            if normalize:
+                y_pred_train = y_pred_train_norm * y_train.std() + y_train.mean()
+            else:
+                y_pred_train = y_pred_train_norm
+            train_mse = self.mse(y_train, y_pred_train)
+            plt.scatter(X_train, y_train, label="Train Data")
+            plt.scatter(X_train, y_pred_train, label="Predicted")
+            plt.title(f'Training Data vs Predictions (MSE: {train_mse:.4f})')
+            plt.legend()
+            plt.grid(True)
 
-        # Wykres dla zbioru testowego
-        plt.subplot(1, 2, 2)
-        if normalize:
-            X_test_norm = (X_test - X_train.mean(axis=0)) / X_train.std(axis=0)
-        else:
-            X_test_norm = X_test
-        y_pred_test_norm = self.predict(X_test_norm)
-        if normalize:
-            y_pred_test = y_pred_test_norm * y_train.std() + y_train.mean()
-        else:
-            y_pred_test = y_pred_test_norm
-        test_mse = self.mse(y_test, y_pred_test)
-        plt.scatter(X_test, y_test, label="Test Data")
-        plt.scatter(X_test, y_pred_test, label="Predicted")
-        plt.title(f'Test Data vs Predictions (MSE: {test_mse:.4f})')
-        plt.legend()
-        plt.grid(True)
+            # Wykres dla zbioru testowego
+            plt.subplot(1, 2, 2)
+            if normalize:
+                X_test_norm = (X_test - X_train.mean(axis=0)) / X_train.std(axis=0)
+            else:
+                X_test_norm = X_test
+            y_pred_test_norm = self.predict(X_test_norm)
+            if normalize:
+                y_pred_test = y_pred_test_norm * y_train.std() + y_train.mean()
+            else:
+                y_pred_test = y_pred_test_norm
+            test_mse = self.mse(y_test, y_pred_test)
+            plt.scatter(X_test, y_test, label="Test Data")
+            plt.scatter(X_test, y_pred_test, label="Predicted")
+            plt.title(f'Test Data vs Predictions (MSE: {test_mse:.4f})')
+            plt.legend()
+            plt.grid(True)
 
-        plt.tight_layout()
-        plt.show()
+            plt.tight_layout()
+            plt.show()
+        else:
+            plt.subplot(1, 2, 1)
+            plt.scatter(X_train.iloc[:, 0], X_train.iloc[:, 1], c=y_train)
+            plt.title('Train Data')
+
+            y_train_pred = self.predict(X_train)
+            y_test_pred = self.predict(X_test)
+            plt.subplot(1, 2, 2)
+            plt.scatter(X_train.iloc[:, 0], X_train.iloc[:, 1], c=y_train_pred)
+            plt.title('Train Predictions, F1 Score: {:.3f}'.format(self.f1_score(y_train, y_train_pred)))
+            plt.show()
+
+            plt.figure(figsize=(8, 3))
+            plt.subplot(1, 2, 1)
+            plt.scatter(X_test.iloc[:, 0], X_test.iloc[:, 1], c=y_test)
+            plt.title('Test Data')
+
+            plt.subplot(1, 2, 2)
+            plt.scatter(X_test.iloc[:, 0], X_test.iloc[:, 1], c=y_test_pred)
+            plt.title('Test Predictions, F1 Score: {:.3f}'.format(self.f1_score(y_test, y_test_pred)))
+            plt.show()

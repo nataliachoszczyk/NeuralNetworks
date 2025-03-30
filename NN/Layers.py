@@ -7,13 +7,16 @@ class Layer:
         activation_functions = {
             'sigmoid': sigmoid,
             'linear': linear,
-            'tanh': tanh
+            'tanh': tanh,
+            'softmax': softmax,
+            'relu': relu
         }
         
         activation_derivative = {
             'sigmoid': sigmoid_derivative,
             'linear': linear_derivative,
-            'tanh': tanh_derivative
+            'tanh': tanh_derivative,
+            'relu': relu_derivative
         }
         
         self.activation = activation_functions.get(activation)
