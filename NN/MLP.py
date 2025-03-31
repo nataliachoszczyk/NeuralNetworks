@@ -19,15 +19,27 @@ class MLP:
     
     def backpropagate(self, X, y, activations):
         y_pred = activations[-1]
-        errors = [y_pred - y]
-        
-        if self.task == 'classification':
-            errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T))
-        else:
-            errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T) * self.layers[len(self.layers) - 2].activation_derivative(activations[len(self.layers) - 1]))
 
-        for i in range(len(self.layers) - 2, 0, -1):
-            errors.append(errors[-1].dot(self.layers[i].weights.T) * self.layers[i-1].activation_derivative(activations[i]))
+        # errors = [y_pred - y]
+        # if self.task == 'classification':
+        #     errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T))
+        # else:
+        #     errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T) * self.layers[len(self.layers) - 2].activation_derivative(activations[len(self.layers) - 1]))
+        # for i in range(len(self.layers) - 2, 0, -1):
+        #     errors.append(errors[-1].dot(self.layers[i].weights.T) * self.layers[i-1].activation_derivative(activations[i]))
+        
+        errors = []
+        if self.task == 'classification':
+            errors.append(y_pred - y)
+        else:
+            errors.append((y_pred - y) * self.layers[-1].activation_derivative(activations[-1]))
+
+        for i in range(len(self.layers) - 2, -1, -1):  
+            delta = errors[-1].dot(self.layers[i+1].weights.T)
+            if self.layers[i].activation != 'softmax':
+                delta *= self.layers[i].activation_derivative(activations[i+1])
+            errors.append(delta)
+        
         errors.reverse()
         
         weight_gradients = []
@@ -55,11 +67,11 @@ class MLP:
         if normalize and self.task == 'regression':
             X_norm = (X - X.mean(axis=0)) / X.std(axis=0)
             y_norm = (y - y.mean(axis=0)) / y.std(axis=0)
-        else:
-            # normalizacja X do klasyfikacji
+        elif normalize and self.task == 'classification':
             X_norm = (X - X.mean(axis=0)) / X.std(axis=0)
-
-            #X_norm = X
+            y_norm = y_oh
+        else:
+            X_norm = X
             y_norm = y_oh if self.task == 'classification' else y
         
         loss_history = []
@@ -124,12 +136,15 @@ class MLP:
         self.layers[layer_idx].biases = biases
 
     def one_hot_encode(self, y, n=None):
-        n = len(np.unique(y)) if n is None else n
-        y = y.astype(int)
-        y_one_hot = np.zeros((len(y), n))
-        y_one_hot[np.arange(len(y)), y] = 1
+        y=y.astype(int)
+        if n is None:
+            n = len(np.unique(y)) 
+        one_hot = np.zeros((y.shape[0], n))
 
-        return y_one_hot
+        for i in range(y.shape[0]):
+            one_hot[i, y[i]] = 1  
+
+        return one_hot
     
 
     ##### METRICS #####
@@ -152,11 +167,11 @@ class MLP:
             f1_all += f1
         
         return f1_all / len(classes) if classes else 0
+
     
     def cross_entropy(self, y_true, y_pred):
         epsilon = 1e-12
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-        #loss = -np.sum(y_true * np.log(y_pred)) / y_true.shape[0]
         loss = -np.mean(np.sum(y_true * np.log(y_pred), axis=1))
         
         return loss
@@ -251,9 +266,9 @@ class MLP:
             plt.scatter(X_train.iloc[:, 0], X_train.iloc[:, 1], c=y_train)
             plt.title('Train Data')
 
-            # nornalizacja X_train i X_test
-            X_train_norm = (X_train - X_train.mean(axis=0)) / X_train.std(axis=0)
-            X_test_norm = (X_test - X_train.mean(axis=0)) / X_train.std(axis=0)
+            if normalize:
+                X_train_norm = (X_train - X_train.mean(axis=0)) / X_train.std(axis=0)
+                X_test_norm = (X_test - X_train.mean(axis=0)) / X_train.std(axis=0)
 
             y_train_pred = self.predict(X_train_norm)
             y_test_pred = self.predict(X_test_norm)
