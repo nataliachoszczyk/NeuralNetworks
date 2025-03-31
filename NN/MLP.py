@@ -19,10 +19,6 @@ class MLP:
     
     def backpropagate(self, X, y, activations):
         y_pred = activations[-1]
-        if self.task == 'classification':
-            y_pred = np.argmax(y_pred, axis=1).flatten()
-            y_pred = self.one_hot_encode(y_pred, n=y.shape[1])
-
         errors = [y_pred - y]
         
         if self.task == 'classification':
@@ -60,7 +56,10 @@ class MLP:
             X_norm = (X - X.mean(axis=0)) / X.std(axis=0)
             y_norm = (y - y.mean(axis=0)) / y.std(axis=0)
         else:
-            X_norm = X
+            # normalizacja X do klasyfikacji
+            X_norm = (X - X.mean(axis=0)) / X.std(axis=0)
+
+            #X_norm = X
             y_norm = y_oh if self.task == 'classification' else y
         
         loss_history = []
@@ -88,6 +87,11 @@ class MLP:
                         cache[j] = beta * cache[j] + (1 - beta) * (np.clip(weight_gradients[j], -gradient_max, gradient_max) ** 2)
                         self.layers[j].weights -= learning_rate * np.clip(weight_gradients[j], -gradient_max, gradient_max) / (np.sqrt(cache[j]) + epsilon)
                         self.layers[j].biases -= learning_rate * np.clip(bias_gradients[j], -gradient_max, gradient_max)
+                    elif mode == 'adam':
+                        velocity[j] = beta * velocity[j] + (1 - beta) * np.clip(weight_gradients[j], -gradient_max, gradient_max)
+                        cache[j] = beta * cache[j] + (1 - beta) * (np.clip(weight_gradients[j], -gradient_max, gradient_max) ** 2)
+                        self.layers[j].weights -= learning_rate * velocity[j] / (np.sqrt(cache[j]) + epsilon)
+                        self.layers[j].biases -= learning_rate * np.clip(bias_gradients[j], -gradient_max, gradient_max)
 
                     else:
                         self.layers[j].weights -= learning_rate * np.clip(weight_gradients[j], -gradient_max, gradient_max)
@@ -97,6 +101,7 @@ class MLP:
             if normalize and self.task == 'regression':
                 y_pred = y_pred * y.std(axis=0) + y.mean(axis=0)
             y_pred_epoch = np.vstack(epoch_predictions)
+
             loss = self.mse(y, y_pred) if self.task == 'regression' else self.cross_entropy(y_norm, y_pred_epoch)
             loss_history.append(loss)
             weight_history.append([layer.weights.copy() for layer in self.layers])
@@ -151,7 +156,8 @@ class MLP:
     def cross_entropy(self, y_true, y_pred):
         epsilon = 1e-12
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-        loss = -np.sum(y_true * np.log(y_pred)) / y_true.shape[0]
+        #loss = -np.sum(y_true * np.log(y_pred)) / y_true.shape[0]
+        loss = -np.mean(np.sum(y_true * np.log(y_pred), axis=1))
         
         return loss
 
@@ -245,8 +251,12 @@ class MLP:
             plt.scatter(X_train.iloc[:, 0], X_train.iloc[:, 1], c=y_train)
             plt.title('Train Data')
 
-            y_train_pred = self.predict(X_train)
-            y_test_pred = self.predict(X_test)
+            # nornalizacja X_train i X_test
+            X_train_norm = (X_train - X_train.mean(axis=0)) / X_train.std(axis=0)
+            X_test_norm = (X_test - X_train.mean(axis=0)) / X_train.std(axis=0)
+
+            y_train_pred = self.predict(X_train_norm)
+            y_test_pred = self.predict(X_test_norm)
             plt.subplot(1, 2, 2)
             plt.scatter(X_train.iloc[:, 0], X_train.iloc[:, 1], c=y_train_pred)
             plt.title('Train Predictions, F1 Score: {:.3f}'.format(self.f1_score(y_train, y_train_pred)))
