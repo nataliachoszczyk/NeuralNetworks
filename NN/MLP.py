@@ -20,14 +20,6 @@ class MLP:
     def backpropagate(self, X, y, activations):
         y_pred = activations[-1]
 
-        # errors = [y_pred - y]
-        # if self.task == 'classification':
-        #     errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T))
-        # else:
-        #     errors.append(errors[-1].dot(self.layers[len(self.layers) - 1].weights.T) * self.layers[len(self.layers) - 2].activation_derivative(activations[len(self.layers) - 1]))
-        # for i in range(len(self.layers) - 2, 0, -1):
-        #     errors.append(errors[-1].dot(self.layers[i].weights.T) * self.layers[i-1].activation_derivative(activations[i]))
-        
         errors = []
         if self.task == 'classification':
             errors.append(y_pred - y)
@@ -109,19 +101,21 @@ class MLP:
                         self.layers[j].weights -= learning_rate * np.clip(weight_gradients[j], -gradient_max, gradient_max)
                         self.layers[j].biases -= learning_rate * np.clip(bias_gradients[j], -gradient_max, gradient_max)
 
-            y_pred = self.predict(X_norm)
-            if normalize and self.task == 'regression':
-                y_pred = y_pred * y.std(axis=0) + y.mean(axis=0)
-            y_pred_epoch = np.vstack(epoch_predictions)
 
-            loss = self.mse(y, y_pred) if self.task == 'regression' else self.cross_entropy(y_norm, y_pred_epoch)
-            loss_history.append(loss)
-            weight_history.append([layer.weights.copy() for layer in self.layers])
-            if self.task == 'classification':
-                f1 = self.f1_score(y, y_pred)
-                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}, F1 Score: {f1}")
-            else:  
-                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}")
+            if (epoch+1) % 100 == 0:
+                y_pred = self.predict(X_norm)
+                if normalize and self.task == 'regression':
+                    y_pred = y_pred * y.std(axis=0) + y.mean(axis=0)
+                y_pred_epoch = np.vstack(epoch_predictions)
+
+                loss = self.mse(y, y_pred) if self.task == 'regression' else self.cross_entropy(y_norm, y_pred_epoch)
+                loss_history.append(loss)
+                #weight_history.append([layer.weights.copy() for layer in self.layers])
+                if self.task == 'classification':
+                    f1 = self.f1_score(y, y_pred)
+                    print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}, F1 Score: {f1}")
+                else:  
+                    print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}")
             
         self.plot_loss(loss_history, ((1 * epochs) // 2), epochs)
     
@@ -183,22 +177,16 @@ class MLP:
         plt.figure(figsize=(8, 3))
 
         plt.subplot(1, 2, 1)
-        plt.scatter(range(len(loss_history)), loss_history)
+        x_values = [i * 100 for i in range(len(loss_history))]
+        plt.scatter(x_values, loss_history)
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.title('Loss vs Epochs')
         plt.grid(True)
 
         plt.subplot(1, 2, 2)
-        plt.scatter(range(start_epoch, end_epoch), loss_history[start_epoch:end_epoch])
-        plt.xlabel('Epochs')
-        plt.ylabel('Loss')
-        plt.title('Loss vs Epochs for second half of epochs')
-        plt.grid(True)
-        plt.show()
-
-    def plot_partial_loss(self, loss_history, start_epoch, end_epoch):
-        plt.scatter(range(start_epoch, end_epoch), loss_history[start_epoch:end_epoch])
+        x_values_range = [i * 100 for i in range(start_epoch//100, end_epoch//100)]
+        plt.scatter(x_values_range, loss_history[start_epoch//100:end_epoch//100])
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.title('Loss vs Epochs for second half of epochs')
@@ -269,7 +257,9 @@ class MLP:
             if normalize:
                 X_train_norm = (X_train - X_train.mean(axis=0)) / X_train.std(axis=0)
                 X_test_norm = (X_test - X_train.mean(axis=0)) / X_train.std(axis=0)
-
+            else:
+                X_train_norm = X_train
+                X_test_norm = X_test
             y_train_pred = self.predict(X_train_norm)
             y_test_pred = self.predict(X_test_norm)
             plt.subplot(1, 2, 2)
