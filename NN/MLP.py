@@ -97,7 +97,7 @@ class MLP:
                         self.layers[j].biases -= learning_rate * np.clip(bias_gradients[j], -gradient_max, gradient_max)
 
 
-            if (epoch+1) % 100 == 0:
+            if (epoch+1) % 10 == 0:
                 y_pred = self.predict(X_norm)
                 if normalize and self.task == 'regression':
                     y_pred = y_pred * y.std(axis=0) + y.mean(axis=0)
@@ -180,8 +180,8 @@ class MLP:
         plt.grid(True)
 
         plt.subplot(1, 2, 2)
-        x_values_range = [i * 100 for i in range(start_epoch//100, end_epoch//100)]
-        plt.scatter(x_values_range, loss_history[start_epoch//100:end_epoch//100])
+        x_values_range = [i * 10 for i in range(start_epoch//10, end_epoch//10)]
+        plt.scatter(x_values_range, loss_history[start_epoch//10:end_epoch//10])
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.title('Loss vs Epochs for second half of epochs')
