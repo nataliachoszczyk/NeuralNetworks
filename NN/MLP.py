@@ -91,11 +91,6 @@ class MLP:
                         cache[j] = beta * cache[j] + (1 - beta) * (np.clip(weight_gradients[j], -gradient_max, gradient_max) ** 2)
                         self.layers[j].weights -= learning_rate * np.clip(weight_gradients[j], -gradient_max, gradient_max) / (np.sqrt(cache[j]) + epsilon)
                         self.layers[j].biases -= learning_rate * np.clip(bias_gradients[j], -gradient_max, gradient_max)
-                    elif mode == 'adam':
-                        velocity[j] = beta * velocity[j] + (1 - beta) * np.clip(weight_gradients[j], -gradient_max, gradient_max)
-                        cache[j] = beta * cache[j] + (1 - beta) * (np.clip(weight_gradients[j], -gradient_max, gradient_max) ** 2)
-                        self.layers[j].weights -= learning_rate * velocity[j] / (np.sqrt(cache[j]) + epsilon)
-                        self.layers[j].biases -= learning_rate * np.clip(bias_gradients[j], -gradient_max, gradient_max)
 
                     else:
                         self.layers[j].weights -= learning_rate * np.clip(weight_gradients[j], -gradient_max, gradient_max)
